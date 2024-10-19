@@ -1,5 +1,5 @@
 .{
-    .name = "zig-soundio",
+    .name = "zig-wav",
     .version = "0.1.0",
     .dependencies = .{},
     .paths = .{
