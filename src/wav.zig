@@ -263,6 +263,136 @@ pub const Decoder = struct {
     }
 };
 
+/// Encode audio samples to wav file. Must call `finalize()` once complete. Samples will be encoded
+/// with type T (PCM int or IEEE float).
+pub fn Encoder(
+    comptime T: type,
+    comptime WriterType: type,
+    comptime SeekableType: type,
+) type {
+    return struct {
+        const Self = @This();
+
+        const Error = WriterType.Error || SeekableType.SeekError || error{ InvalidArgument, Overflow };
+
+        writer: WriterType,
+        seekable: SeekableType,
+
+        fmt: FormatChunk,
+        data_size: usize = 0,
+
+        pub fn init(
+            writer: WriterType,
+            seekable: SeekableType,
+            sample_rate: usize,
+            channels: usize,
+        ) Error!Self {
+            const bits = switch (T) {
+                u8 => 8,
+                i16 => 16,
+                i24 => 24,
+                f32 => 32,
+                else => @compileError(bad_type),
+            };
+
+            if (sample_rate == 0 or sample_rate > std.math.maxInt(u32)) {
+                std.log.debug("invalid sample_rate {}", .{sample_rate});
+                return error.InvalidArgument;
+            }
+            if (channels == 0 or channels > std.math.maxInt(u16)) {
+                std.log.debug("invalid channels {}", .{channels});
+                return error.InvalidArgument;
+            }
+            const bytes_per_second = sample_rate * channels * bits / 8;
+            if (bytes_per_second > std.math.maxInt(u32)) {
+                std.log.debug("bytes_per_second, {}, too large", .{bytes_per_second});
+                return error.InvalidArgument;
+            }
+
+            var self = Self{
+                .writer = writer,
+                .seekable = seekable,
+                .fmt = .{
+                    .code = switch (T) {
+                        u8, i16, i24 => .pcm,
+                        f32 => .ieee_float,
+                        else => @compileError(bad_type),
+                    },
+                    .channels = @intCast(channels),
+                    .sample_rate = @intCast(sample_rate),
+                    .bytes_per_second = @intCast(bytes_per_second),
+                    .block_align = @intCast(channels * bits / 8),
+                    .bits = @intCast(bits),
+                },
+            };
+
+            try self.writeHeader();
+            return self;
+        }
+
+        /// Write samples of type S to stream after converting to type T. Supports PCM encoded ints and
+        /// IEEE float. Multi-channel samples must be interleaved: samples for time `t` for all channels
+        /// are written to `t * channels`.
+        pub fn write(self: *Self, comptime S: type, buf: []const S) Error!void {
+            switch (T) {
+                u8,
+                i16,
+                i24,
+                => {
+                    for (buf) |x| {
+                        try self.writer.writeInt(T, sample.convert(T, x), .little);
+                        self.data_size += @bitSizeOf(T) / 8;
+                    }
+                },
+                f32 => {
+                    for (buf) |x| {
+                        const f: f32 = sample.convert(f32, x);
+                        try self.writer.writeAll(std.mem.asBytes(&f));
+                        self.data_size += @bitSizeOf(T) / 8;
+                    }
+                },
+                else => @compileError(bad_type),
+            }
+        }
+
+        fn writeHeader(self: *Self) Error!void {
+            // Size of RIFF header + fmt id/size + fmt chunk + data id/size.
+            const header_size: usize = 12 + 8 + @sizeOf(@TypeOf(self.fmt)) + 8;
+
+            if (header_size + self.data_size > std.math.maxInt(u32)) {
+                return error.Overflow;
+            }
+
+            try self.writer.writeAll("RIFF");
+            try self.writer.writeInt(u32, @intCast(header_size + self.data_size), .little); // Overwritten by finalize().
+            try self.writer.writeAll("WAVE");
+
+            try self.writer.writeAll("fmt ");
+            try self.writer.writeInt(u32, @sizeOf(@TypeOf(self.fmt)), .little);
+            try self.writer.writeStruct(self.fmt);
+
+            try self.writer.writeAll("data");
+            try self.writer.writeInt(u32, @intCast(self.data_size), .little);
+        }
+
+        /// Must be called once writing is complete. Writes total size to file header.
+        pub fn finalize(self: *Self) Error!void {
+            try self.seekable.seekTo(0);
+            try self.writeHeader();
+        }
+    };
+}
+
+pub fn encoder(
+    comptime T: type,
+    writer: anytype,
+    seekable: anytype,
+    sample_rate: usize,
+    channels: usize,
+) !Encoder(T, @TypeOf(writer), @TypeOf(seekable)) {
+    return Encoder(T, @TypeOf(writer), @TypeOf(seekable)).init(writer, seekable, sample_rate, channels);
+}
+
 test "pcm(bits=8) sample_rate=22050 channels=1" {
     var file = try std.fs.cwd().openFile("test/pcm8_22050_mono.wav", .{});
     defer file.close();
