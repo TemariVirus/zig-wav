@@ -3,6 +3,8 @@ const wav = @import("wav");
 const Mixer = wav.Mixer;
 const Resampler = wav.Resampler;
 
+const OUT_SAMPLE_RATE = 48_000;
+
 pub fn main() !void {
     const file1 = try std.fs.cwd().openFile("1.wav", .{});
     defer file1.close();
@@ -23,27 +25,21 @@ pub fn main() !void {
     defer out.close();
 
     var bw = std.io.bufferedWriter(out.writer());
-    var encoder = try wav.encoder(u8, bw.writer(), out.seekableStream(), 44_100, 1);
+    var encoder = try wav.encoder(f32, bw.writer(), out.seekableStream(), OUT_SAMPLE_RATE, 1);
 
     const start = std.time.nanoTimestamp();
 
     var mx = Mixer.init(
         &.{ decoder1.reader(), decoder2.reader(), decoder3.reader() },
-        &.{ 1.0, 1.0, 1.0 },
+        &.{ 1.8, 2.25, 1.5 },
     );
     const mixer = mx.reader();
 
-    var rs1 = try Resampler.init(mixer, 48_000);
-    const resampler1 = rs1.reader();
+    var rs = try Resampler.init(mixer, OUT_SAMPLE_RATE);
+    const resampler = rs.reader();
 
-    var rs2 = try Resampler.init(resampler1, 44_100);
-    const resampler2 = rs2.reader();
-
-    var buf: [1024]f32 = undefined;
-    var len: usize = try resampler2.readAll(&buf);
-    while (len > 0) {
-        try encoder.write(f32, buf[0..len]);
-        len = try resampler2.readAll(&buf);
+    while (try resampler.readOrNull()) |sample| {
+        try encoder.write(f32, &.{sample});
     }
     try bw.flush();
 
