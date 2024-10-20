@@ -7,6 +7,7 @@ const builtin = @import("builtin");
 
 pub const Resampler = @import("Resampler.zig");
 pub const sample = @import("sample.zig");
+pub const SampleReader = @import("SampleReader.zig");
 
 const bad_type = "sample type must be u8, i16, i24, or f32";
 
@@ -108,16 +109,16 @@ pub const Decoder = struct {
         comptime std.debug.assert(builtin.target.cpu.arch.endian() == .little);
 
         var counting_reader = ReaderType{ .child_reader = inner_reader };
-        var reader = counting_reader.reader().any();
+        var any_reader = counting_reader.reader().any();
 
-        var chunk_id = try reader.readBytesNoEof(4);
+        var chunk_id = try any_reader.readBytesNoEof(4);
         if (!std.mem.eql(u8, "RIFF", &chunk_id)) {
             std.log.debug("not a RIFF file", .{});
             return error.InvalidFileType;
         }
-        const total_size = try std.math.add(u32, try reader.readInt(u32, .little), 8);
+        const total_size = try std.math.add(u32, try any_reader.readInt(u32, .little), 8);
 
-        chunk_id = try reader.readBytesNoEof(4);
+        chunk_id = try any_reader.readBytesNoEof(4);
         if (!std.mem.eql(u8, "WAVE", &chunk_id)) {
             std.log.debug("not a WAVE file", .{});
             return error.InvalidFileType;
@@ -128,11 +129,11 @@ pub const Decoder = struct {
         var data_size: usize = 0; // Bytes in data chunk.
         var chunk_size: usize = 0;
         while (true) {
-            chunk_id = try reader.readBytesNoEof(4);
-            chunk_size = try reader.readInt(u32, .little);
+            chunk_id = try any_reader.readBytesNoEof(4);
+            chunk_size = try any_reader.readInt(u32, .little);
 
             if (std.mem.eql(u8, "fmt ", &chunk_id)) {
-                fmt = try FormatChunk.parse(reader, chunk_size);
+                fmt = try FormatChunk.parse(any_reader, chunk_size);
                 try fmt.?.validate();
 
                 // TODO Support 32-bit aligned i24 blocks.
@@ -146,7 +147,7 @@ pub const Decoder = struct {
                 break;
             } else {
                 std.log.info("skipping unrecognized chunk {s}", .{chunk_id});
-                try reader.skipBytes(chunk_size, .{});
+                try any_reader.skipBytes(chunk_size, .{});
             }
         }
 
@@ -176,12 +177,28 @@ pub const Decoder = struct {
         };
     }
 
+    pub fn readInternal(self: *Self, comptime Src: type, comptime Dst: type, buf: []Dst) Error!usize {
+        var any_reader = self.counting_reader.reader().any();
+
+        const limit = @min(buf.len, self.remaining());
+        var i: usize = 0;
+        while (i < limit) : (i += 1) {
+            buf[i] = sample.convert(
+                Dst,
+                // Propagate EndOfStream error on truncation.
+                switch (@typeInfo(Src)) {
+                    .float => try readFloat(Src, any_reader),
+                    .int => try any_reader.readInt(Src, .little),
+                    else => @compileError(bad_type),
+                },
+            );
+        }
+        return i;
+    }
+
     /// Read samples from stream and converts to type T. Supports PCM encoded ints and IEEE float.
     /// Multi-channel samples are interleaved: samples for time `t` for all channels are written to
     /// `t * channels`. Thus, `buf.len` must be evenly divisible by `channels`.
-    ///
-    /// Errors:
-    ///     InvalidArgument - `buf.len` not evenly divisible `channels`.
     ///
     /// Returns: number of bytes read. 0 indicates end of stream.
     pub fn read(self: *Self, comptime T: type, buf: []T) Error!usize {
@@ -198,23 +215,50 @@ pub const Decoder = struct {
         };
     }
 
-    pub fn readInternal(self: *Self, comptime Src: type, comptime Dst: type, buf: []Dst) Error!usize {
-        var reader = self.counting_reader.reader().any();
-
-        const limit = @min(buf.len, self.remaining());
-        var i: usize = 0;
-        while (i < limit) : (i += 1) {
-            buf[i] = sample.convert(
-                Dst,
-                // Propagate EndOfStream error on truncation.
-                switch (@typeInfo(Src)) {
-                    .float => try readFloat(Src, reader),
-                    .int => try reader.readInt(Src, .little),
-                    else => @compileError(bad_type),
-                },
-            );
+    /// Read samples from stream and converts to f32. Supports PCM encoded ints and IEEE float.
+    /// Multi-channel samples are averaged into a single mono channel sample.
+    ///
+    /// Returns: number of bytes read. 0 indicates end of stream.
+    pub fn readMono(self: *Self, buf: []f32) Error!usize {
+        const limit = @min(buf.len, self.remaining() / self.channels());
+        for (0..limit) |i| {
+            var sum: f32 = 0.0;
+            var single_buf: [1]f32 = undefined;
+            for (0..self.channels()) |_| {
+                std.debug.assert(try self.read(f32, &single_buf) == single_buf.len);
+                sum += single_buf[0];
+            }
+            buf[i] = sum / @as(f32, @floatFromInt(self.channels()));
         }
-        return i;
+        return limit;
+    }
+
+    fn typeErasedRead(context: *anyopaque, buf: []f32) Error!usize {
+        const self: *Self = @alignCast(@ptrCast(context));
+        return read(self, f32, buf);
+    }
+
+    pub fn reader(self: *Self) SampleReader {
+        return .{
+            .sample_rate = self.sampleRate(),
+            .channels = self.channels(),
+            .context = @ptrCast(self),
+            .readFn = typeErasedRead,
+        };
+    }
+
+    fn typeErasedReadMono(context: *anyopaque, buf: []f32) Error!usize {
+        const self: *Self = @alignCast(@ptrCast(context));
+        return readMono(self, buf);
+    }
+
+    pub fn readerMono(self: *Self) SampleReader {
+        return .{
+            .sample_rate = self.sampleRate(),
+            .channels = self.channels(),
+            .context = @ptrCast(self),
+            .readFn = typeErasedReadMono,
+        };
     }
 };
 
