@@ -1,10 +1,12 @@
 const std = @import("std");
-const builtin = @import("builtin");
-const sample = @import("sample.zig");
-
 const AnyReader = std.io.AnyReader;
 const expectEqual = std.testing.expectEqual;
 const expectError = std.testing.expectError;
+
+const builtin = @import("builtin");
+
+pub const Resampler = @import("Resampler.zig");
+pub const sample = @import("sample.zig");
 
 const bad_type = "sample type must be u8, i16, i24, or f32";
 
@@ -80,15 +82,15 @@ pub const Decoder = struct {
     data_start: usize,
     data_size: usize,
 
-    pub fn sampleRate(self: *const Self) usize {
+    pub fn sampleRate(self: *const Self) u32 {
         return self.fmt.sample_rate;
     }
 
-    pub fn channels(self: *const Self) usize {
+    pub fn channels(self: *const Self) u16 {
         return self.fmt.channels;
     }
 
-    pub fn bits(self: *const Self) usize {
+    pub fn bits(self: *const Self) u16 {
         return self.fmt.bits;
     }
 
@@ -222,9 +224,9 @@ test "pcm(bits=8) sample_rate=22050 channels=1" {
 
     var br = std.io.bufferedReader(file.reader());
     var wav_decoder = try Decoder.init(br.reader().any());
-    try expectEqual(@as(usize, 22050), wav_decoder.sampleRate());
-    try expectEqual(@as(usize, 1), wav_decoder.channels());
-    try expectEqual(@as(usize, 8), wav_decoder.bits());
+    try expectEqual(@as(u32, 22050), wav_decoder.sampleRate());
+    try expectEqual(@as(u16, 1), wav_decoder.channels());
+    try expectEqual(@as(u16, 8), wav_decoder.bits());
     try expectEqual(@as(usize, 104676), wav_decoder.remaining());
 
     var buf: [64]f32 = undefined;
@@ -243,8 +245,9 @@ test "pcm(bits=16) sample_rate=44100 channels=2" {
 
     var br = std.io.bufferedReader(file.reader());
     var wav_decoder = try Decoder.init(br.reader().any());
-    try expectEqual(@as(usize, 44100), wav_decoder.sampleRate());
-    try expectEqual(@as(usize, 2), wav_decoder.channels());
+    try expectEqual(@as(u32, 44100), wav_decoder.sampleRate());
+    try expectEqual(@as(u16, 2), wav_decoder.channels());
+    try expectEqual(@as(u16, 16), wav_decoder.bits());
     try expectEqual(@as(usize, data_len), wav_decoder.remaining());
 
     const buf = try std.testing.allocator.alloc(i16, data_len);
@@ -261,9 +264,9 @@ test "pcm(bits=24) sample_rate=48000 channels=1" {
 
     var br = std.io.bufferedReader(file.reader());
     var wav_decoder = try Decoder.init(br.reader().any());
-    try expectEqual(@as(usize, 48000), wav_decoder.sampleRate());
-    try expectEqual(@as(usize, 1), wav_decoder.channels());
-    try expectEqual(@as(usize, 24), wav_decoder.bits());
+    try expectEqual(@as(u32, 48000), wav_decoder.sampleRate());
+    try expectEqual(@as(u16, 1), wav_decoder.channels());
+    try expectEqual(@as(u16, 24), wav_decoder.bits());
     try expectEqual(@as(usize, 508800), wav_decoder.remaining());
 
     var buf: [1]f32 = undefined;
@@ -288,9 +291,9 @@ test "pcm(bits=24) sample_rate=44100 channels=2" {
 
     var br = std.io.bufferedReader(file.reader());
     var wav_decoder = try Decoder.init(br.reader().any());
-    try expectEqual(@as(usize, 44100), wav_decoder.sampleRate());
-    try expectEqual(@as(usize, 2), wav_decoder.channels());
-    try expectEqual(@as(usize, 24), wav_decoder.bits());
+    try expectEqual(@as(u32, 44100), wav_decoder.sampleRate());
+    try expectEqual(@as(u16, 2), wav_decoder.channels());
+    try expectEqual(@as(u16, 24), wav_decoder.bits());
     try expectEqual(@as(usize, 157952), wav_decoder.remaining());
 
     var buf: [1]f32 = undefined;
@@ -309,9 +312,9 @@ test "ieee_float(bits=32) sample_rate=48000 channels=2" {
 
     var br = std.io.bufferedReader(file.reader());
     var wav_decoder = try Decoder.init(br.reader().any());
-    try expectEqual(@as(usize, 48000), wav_decoder.sampleRate());
-    try expectEqual(@as(usize, 2), wav_decoder.channels());
-    try expectEqual(@as(usize, 32), wav_decoder.bits());
+    try expectEqual(@as(u32, 48000), wav_decoder.sampleRate());
+    try expectEqual(@as(u16, 2), wav_decoder.channels());
+    try expectEqual(@as(u16, 32), wav_decoder.bits());
     try expectEqual(@as(usize, 592342), wav_decoder.remaining());
 
     var buf: [64]f32 = undefined;
@@ -328,9 +331,9 @@ test "ieee_float(bits=32) sample_rate=96000 channels=2" {
 
     var br = std.io.bufferedReader(file.reader());
     var wav_decoder = try Decoder.init(br.reader().any());
-    try expectEqual(@as(usize, 96000), wav_decoder.sampleRate());
-    try expectEqual(@as(usize, 2), wav_decoder.channels());
-    try expectEqual(@as(usize, 32), wav_decoder.bits());
+    try expectEqual(@as(u32, 96000), wav_decoder.sampleRate());
+    try expectEqual(@as(u16, 2), wav_decoder.channels());
+    try expectEqual(@as(u16, 32), wav_decoder.bits());
     try expectEqual(@as(usize, 67744), wav_decoder.remaining());
 
     var buf: [64]f32 = undefined;
