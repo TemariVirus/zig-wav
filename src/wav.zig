@@ -5,6 +5,7 @@ const expectError = std.testing.expectError;
 
 const builtin = @import("builtin");
 
+pub const Mixer = @import("Mixer.zig");
 pub const Resampler = @import("Resampler.zig");
 pub const sample = @import("sample.zig");
 pub const SampleReader = @import("SampleReader.zig");
@@ -240,8 +241,8 @@ pub const Decoder = struct {
 
     pub fn reader(self: *Self) SampleReader {
         return .{
-            .sample_rate = self.sampleRate(),
             .channels = self.channels(),
+            .sample_rate = self.sampleRate(),
             .context = @ptrCast(self),
             .readFn = typeErasedRead,
         };
@@ -254,8 +255,8 @@ pub const Decoder = struct {
 
     pub fn readerMono(self: *Self) SampleReader {
         return .{
-            .sample_rate = self.sampleRate(),
             .channels = self.channels(),
+            .sample_rate = self.sampleRate(),
             .context = @ptrCast(self),
             .readFn = typeErasedReadMono,
         };

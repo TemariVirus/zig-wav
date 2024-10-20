@@ -4,7 +4,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const SampleReader = @import("wav.zig").SampleReader;
 
-sample_reader: SampleReader,
+source: SampleReader,
 target_sample_rate: u32,
 samples: [2]f32,
 read: usize = 0,
@@ -15,23 +15,14 @@ const Self = @This();
 pub fn init(sample_reader: SampleReader, target_sample_rate: u32) !Self {
     assert(sample_reader.channels == 1);
     return .{
-        .sample_reader = sample_reader,
+        .source = sample_reader,
         .target_sample_rate = target_sample_rate,
-        .samples = .{ undefined, try readOne(sample_reader) orelse undefined },
-    };
-}
-
-fn readOne(sample_reader: SampleReader) !?f32 {
-    return sample_reader.readSample() catch |err| {
-        if (err == error.EndOfStream) {
-            return null;
-        }
-        return err;
+        .samples = .{ undefined, try sample_reader.readOrNull() orelse undefined },
     };
 }
 
 fn next(self: *Self) !bool {
-    const sample = try readOne(self.sample_reader) orelse return false;
+    const sample = try self.source.readOrNull() orelse return false;
     self.read += 1;
 
     std.mem.copyForwards(f32, self.samples[0..], self.samples[1..]);
@@ -40,7 +31,7 @@ fn next(self: *Self) !bool {
 }
 
 pub fn resample(self: *Self, buf: []f32) !usize {
-    const in_sample_rate: f32 = @floatFromInt(self.sample_reader.sample_rate);
+    const in_sample_rate: f32 = @floatFromInt(self.source.sample_rate);
     const in_interval: f32 = 1.0 / in_sample_rate;
     const out_interval: f32 = 1.0 / @as(f32, @floatFromInt(self.target_sample_rate));
 
@@ -79,8 +70,8 @@ fn typeErasedResample(context: *anyopaque, buf: []f32) anyerror!usize {
 
 pub fn reader(self: *Self) SampleReader {
     return .{
-        .sample_rate = self.target_sample_rate,
         .channels = 1,
+        .sample_rate = self.target_sample_rate,
         .context = @ptrCast(self),
         .readFn = typeErasedResample,
     };

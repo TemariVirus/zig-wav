@@ -2,8 +2,8 @@ const std = @import("std");
 const assert = std.debug.assert;
 const mem = std.mem;
 
-sample_rate: u32,
 channels: u16,
+sample_rate: u32,
 context: *anyopaque,
 readFn: *const fn (context: *anyopaque, buffer: []f32) anyerror!usize,
 
@@ -105,11 +105,11 @@ pub fn readAllAlloc(self: Self, allocator: mem.Allocator, options: ReadAllAllocO
     return try array_list.toOwnedSlice();
 }
 
-/// Reads 1 sample from the stream or returns `error.EndOfStream`.
-pub fn readSample(self: Self) anyerror!f32 {
+/// Reads 1 sample from the stream or returns null if end of stream.
+pub fn readOrNull(self: Self) anyerror!?f32 {
     var result: [1]f32 = undefined;
     const amt_read = try self.read(result[0..]);
-    if (amt_read < 1) return error.EndOfStream;
+    if (amt_read < 1) return null;
     return result[0];
 }
 
