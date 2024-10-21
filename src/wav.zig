@@ -109,17 +109,17 @@ pub const Decoder = struct {
     pub fn init(inner_reader: AnyReader) Error!Self {
         comptime std.debug.assert(builtin.target.cpu.arch.endian() == .little);
 
-        var counting_reader = ReaderType{ .child_reader = inner_reader };
-        var any_reader = counting_reader.reader().any();
+        var cr = ReaderType{ .child_reader = inner_reader };
+        var counting_reader = cr.reader();
 
-        var chunk_id = try any_reader.readBytesNoEof(4);
+        var chunk_id = try counting_reader.readBytesNoEof(4);
         if (!std.mem.eql(u8, "RIFF", &chunk_id)) {
             std.log.debug("not a RIFF file", .{});
             return error.InvalidFileType;
         }
-        const total_size = try std.math.add(u32, try any_reader.readInt(u32, .little), 8);
+        const total_size = try std.math.add(u32, try counting_reader.readInt(u32, .little), 8);
 
-        chunk_id = try any_reader.readBytesNoEof(4);
+        chunk_id = try counting_reader.readBytesNoEof(4);
         if (!std.mem.eql(u8, "WAVE", &chunk_id)) {
             std.log.debug("not a WAVE file", .{});
             return error.InvalidFileType;
@@ -130,11 +130,11 @@ pub const Decoder = struct {
         var data_size: usize = 0; // Bytes in data chunk.
         var chunk_size: usize = 0;
         while (true) {
-            chunk_id = try any_reader.readBytesNoEof(4);
-            chunk_size = try any_reader.readInt(u32, .little);
+            chunk_id = try counting_reader.readBytesNoEof(4);
+            chunk_size = try counting_reader.readInt(u32, .little);
 
             if (std.mem.eql(u8, "fmt ", &chunk_id)) {
-                fmt = try FormatChunk.parse(any_reader, chunk_size);
+                fmt = try FormatChunk.parse(counting_reader.any(), chunk_size);
                 try fmt.?.validate();
 
                 // TODO Support 32-bit aligned i24 blocks.
@@ -148,7 +148,7 @@ pub const Decoder = struct {
                 break;
             } else {
                 std.log.info("skipping unrecognized chunk {s}", .{chunk_id});
-                try any_reader.skipBytes(chunk_size, .{});
+                try counting_reader.skipBytes(chunk_size, .{});
             }
         }
 
@@ -162,7 +162,7 @@ pub const Decoder = struct {
             .{ fmt.?.code, fmt.?.bits, fmt.?.sample_rate, fmt.?.channels, total_size },
         );
 
-        const data_start = counting_reader.bytes_read;
+        const data_start = cr.bytes_read;
         if (data_start + data_size > total_size) {
             return error.InvalidSize;
         }
@@ -171,7 +171,7 @@ pub const Decoder = struct {
         }
 
         return .{
-            .counting_reader = counting_reader,
+            .counting_reader = cr,
             .fmt = fmt.?,
             .data_start = data_start,
             .data_size = data_size,

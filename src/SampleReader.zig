@@ -142,3 +142,31 @@ pub fn discard(self: Self) anyerror!u64 {
         index += n;
     }
 }
+
+pub const AccumFuncs = struct {
+    pub fn max(acc: f32, sample: f32) f32 {
+        return @max(acc, sample);
+    }
+
+    pub fn absMax(acc: f32, sample: f32) f32 {
+        return @max(acc, @abs(sample));
+    }
+
+    pub fn min(acc: f32, sample: f32) f32 {
+        return @min(acc, sample);
+    }
+
+    pub fn absMin(acc: f32, sample: f32) f32 {
+        return @min(acc, @abs(sample));
+    }
+};
+
+/// Accumulates a value using `func`. The initial value is `first`.
+/// Calling this function consumes the stream.
+pub fn accumulate(self: Self, first: f32, func: fn (acc: f32, sample: f32) f32) !f32 {
+    var acc = first;
+    while (try self.readOrNull()) |sample| {
+        acc = func(acc, sample);
+    }
+    return acc;
+}

@@ -4,10 +4,11 @@ const SampleReader = @import("wav.zig").SampleReader;
 
 sources: []const SampleReader,
 volumes: []const f32,
+clip: bool,
 
 const Self = @This();
 
-pub fn init(sources: []const SampleReader, volumes: []const f32) Self {
+pub fn init(sources: []const SampleReader, volumes: []const f32, clip: bool) Self {
     assert(sources.len > 0);
     assert(sources.len == volumes.len);
     for (sources) |source| {
@@ -18,6 +19,7 @@ pub fn init(sources: []const SampleReader, volumes: []const f32) Self {
     return .{
         .sources = sources,
         .volumes = volumes,
+        .clip = clip,
     };
 }
 
@@ -34,7 +36,10 @@ pub fn mix(self: Self, buf: []f32) !usize {
         if (end) {
             return i;
         }
-        b.* = std.math.clamp(b.*, -1.0, 1.0);
+
+        if (self.clip) {
+            b.* = std.math.clamp(b.*, -1.0, 1.0);
+        }
     }
     return buf.len;
 }

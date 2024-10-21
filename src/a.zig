@@ -1,5 +1,6 @@
 const std = @import("std");
 const wav = @import("wav");
+const AccumFuncs = wav.SampleReader.AccumFuncs;
 const Mixer = wav.Mixer;
 const Resampler = wav.Resampler;
 
@@ -23,17 +24,44 @@ pub fn main() !void {
 
     const out = try std.fs.cwd().createFile("out.wav", .{});
     defer out.close();
-
     var bw = std.io.bufferedWriter(out.writer());
-    var encoder = try wav.encoder(f32, bw.writer(), out.seekableStream(), OUT_SAMPLE_RATE, 1);
 
     const start = std.time.nanoTimestamp();
+
+    var encoder = try wav.encoder(
+        u8,
+        bw.writer(),
+        out.seekableStream(),
+        OUT_SAMPLE_RATE,
+        1,
+    );
 
     var mx = Mixer.init(
         &.{ decoder1.reader(), decoder2.reader(), decoder3.reader() },
         &.{ 1.8, 2.25, 1.5 },
+        false,
     );
     const mixer = mx.reader();
+
+    const max_norm = (try mixer.accumulate(0.0, AccumFuncs.absMax));
+    std.debug.print("max norm: {d}\n", .{max_norm});
+    mx = Mixer.init(
+        &.{ decoder1.reader(), decoder2.reader(), decoder3.reader() },
+        &.{ 1.8 / max_norm, 2.25 / max_norm, 1.5 / max_norm },
+        true,
+    );
+    decoder1.counting_reader.bytes_read = decoder1.data_start;
+    try file1.seekTo(decoder1.data_start);
+    br1.start = 0;
+    br1.end = 0;
+    decoder2.counting_reader.bytes_read = decoder2.data_start;
+    try file2.seekTo(decoder2.data_start);
+    br2.start = 0;
+    br2.end = 0;
+    decoder3.counting_reader.bytes_read = decoder3.data_start;
+    try file3.seekTo(decoder3.data_start);
+    br3.start = 0;
+    br3.end = 0;
 
     var rs = try Resampler.init(mixer, OUT_SAMPLE_RATE);
     const resampler = rs.reader();
