@@ -1,6 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
-const SampleReader = @import("wav.zig").SampleReader;
+const SampleReader = @import("root.zig").SampleReader;
 
 sources: []const SampleReader,
 volumes: []const f32,

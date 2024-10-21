@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const assert = std.debug.assert;
-const SampleReader = @import("wav.zig").SampleReader;
+const SampleReader = @import("root.zig").SampleReader;
 
 source: SampleReader,
 target_sample_rate: u32,
